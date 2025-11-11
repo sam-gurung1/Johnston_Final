@@ -10,7 +10,9 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
+
+from .calibration import MIN_FOCAL_DISTANCE, MIN_IOD, calc_physical_calibration
 
 
 @dataclass
@@ -22,6 +24,8 @@ class StereoStimulus:
     right_image: Path
     label: Optional[str] = None
     metadata: Dict[str, object] | None = None
+    disparity_px: Optional[float] = None
+    curvature_mm: Optional[float] = None
 
     def metadata_as_json(self) -> str:
         """Return the metadata dictionary as a compact JSON string."""
@@ -43,7 +47,35 @@ def _infer_label(stimulus_id: str, metadata: Dict[str, object] | None) -> Option
     return None
 
 
-def load_stimulus_pairs(directory: str | os.PathLike[str]) -> List[StereoStimulus]:
+def _read_sidecar(metadata_path: Path) -> Dict[str, object]:
+    """Return metadata stored in ``metadata_path`` if it exists."""
+
+    if not metadata_path.exists():
+        return {}
+    with metadata_path.open("r", encoding="utf-8") as meta_file:
+        loaded: Any = json.load(meta_file)
+    if not isinstance(loaded, dict):
+        raise TypeError(
+            f"Stimulus sidecar '{metadata_path.name}' must contain a JSON object."
+        )
+    return loaded
+
+
+def _extract_numeric(metadata: Dict[str, object], key: str) -> Optional[float]:
+    """Extract ``key`` from metadata if numeric, coerced to float."""
+
+    value = metadata.get(key)
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def load_stimulus_pairs(
+    directory: str | os.PathLike[str],
+    *,
+    iod_mm: float = MIN_IOD,
+    focal_mm: float = MIN_FOCAL_DISTANCE,
+) -> List[StereoStimulus]:
     """Load left/right stereo image pairs from ``directory``.
 
     Parameters
@@ -53,6 +85,10 @@ def load_stimulus_pairs(directory: str | os.PathLike[str]) -> List[StereoStimulu
         for filenames ending in ``_L.png`` and automatically searches for the
         matching ``_R.png``.  If a JSON file with the same base name exists it
         will be parsed and attached as metadata.
+    iod_mm:
+        Inter-ocular distance in millimetres. Used to compute hardware calibration data.
+    focal_mm:
+        Focal distance in millimetres for the haploscope calibration.
 
     Returns
     -------
@@ -67,6 +103,7 @@ def load_stimulus_pairs(directory: str | os.PathLike[str]) -> List[StereoStimulu
             "and add your pre-rendered PNG pairs before running the experiment."
         )
 
+    hardware_calibration = calc_physical_calibration(iod_mm, focal_mm)
     left_images: Iterable[Path] = sorted(directory.glob("*_L.png"))
     stimuli: List[StereoStimulus] = []
 
@@ -80,19 +117,23 @@ def load_stimulus_pairs(directory: str | os.PathLike[str]) -> List[StereoStimulu
             )
 
         metadata_path = directory / f"{base_name}.json"
-        metadata: Optional[Dict[str, object]] = None
-        if metadata_path.exists():
-            with metadata_path.open("r", encoding="utf-8") as meta_file:
-                metadata = json.load(meta_file)
+        metadata_dict = _read_sidecar(metadata_path)
+        disparity_px = _extract_numeric(metadata_dict, "disparity_px")
+        curvature_mm = _extract_numeric(metadata_dict, "curvature_mm")
 
-        label = _infer_label(base_name, metadata)
+        metadata_payload: Dict[str, object] = dict(metadata_dict)
+        metadata_payload["hardware_calibration"] = dict(hardware_calibration)
+
+        label = _infer_label(base_name, metadata_payload)
         stimuli.append(
             StereoStimulus(
                 stimulus_id=base_name,
                 left_image=left_image,
                 right_image=right_image,
                 label=label,
-                metadata=metadata,
+                metadata=metadata_payload,
+                disparity_px=disparity_px,
+                curvature_mm=curvature_mm,
             )
         )
 
