@@ -129,3 +129,5 @@ def load_stimulus_pairs(directory: str | os.PathLike[str]) -> List[StereoStimulu
             "No stereo stimuli were found. Ensure PNG pairs are named '*_L.png' "
             "and '*_R.png' inside the stimulus directory."
         )
+
+    return stimuli
