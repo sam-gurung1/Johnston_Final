@@ -16,6 +16,7 @@ class ExperimentAbort(Exception):
 
 DEFAULT_IOD_MM: float = 64.0
 DEFAULT_FOCAL_DISTANCE_MM: float = 1070.0
+PROMPT_TEXT = "Does the shape appear squashed or stretched?"
 
 
 def _coerce_float(value: object, default: float) -> float:
@@ -93,6 +94,104 @@ def _prepare_stimuli(
     return {"left": stim_left, "right": stim_right}
 
 
+def _prompt_position(win: visual.Window) -> float:
+    if win.units == "pix":
+        return (-0.5 * win.size[1]) + 80
+    return -0.7
+
+
+def _prompt_height(win: visual.Window) -> float:
+    if win.units == "pix":
+        return 32.0
+    return 0.075
+
+
+def _prompt_wrap(win: visual.Window) -> Optional[float]:
+    if win.units == "pix":
+        return win.size[0] * 0.9
+    return None
+
+
+def _prepare_prompt_texts(win_left: visual.Window, win_right: visual.Window) -> Dict[str, visual.TextStim]:
+    """Create prompt text objects positioned below the stimuli."""
+
+    prompt_kwargs = dict(
+        text=PROMPT_TEXT,
+        color="white",
+        alignText="center",
+    )
+    left_kwargs = {
+        **prompt_kwargs,
+        "pos": (0, _prompt_position(win_left)),
+        "height": _prompt_height(win_left),
+    }
+    left_wrap = _prompt_wrap(win_left)
+    if left_wrap is not None:
+        left_kwargs["wrapWidth"] = left_wrap
+
+    right_kwargs = {
+        **prompt_kwargs,
+        "pos": (0, _prompt_position(win_right)),
+        "height": _prompt_height(win_right),
+    }
+    right_wrap = _prompt_wrap(win_right)
+    if right_wrap is not None:
+        right_kwargs["wrapWidth"] = right_wrap
+
+    prompt_left = visual.TextStim(win_left, **left_kwargs)
+    prompt_right = visual.TextStim(win_right, **right_kwargs)
+    return {"left": prompt_left, "right": prompt_right}
+
+
+def _draw_prompted_stimuli(
+    stims: Dict[str, visual.ImageStim],
+    prompts: Dict[str, visual.TextStim],
+) -> None:
+    stims["left"].draw()
+    stims["right"].draw()
+    prompts["left"].draw()
+    prompts["right"].draw()
+
+
+def _ensure_window_focus(win: visual.Window) -> None:
+    """Try to bring ``win`` to the foreground so participant input is captured."""
+
+    win_handle = getattr(win, "winHandle", None)
+    if win_handle is None:
+        return
+    try:
+        win_handle.activate()
+    except Exception:
+        pass
+
+
+def _show_prompt_block(
+    *,
+    stims: Dict[str, visual.ImageStim],
+    prompts: Dict[str, visual.TextStim],
+    win_left: visual.Window,
+    win_right: visual.Window,
+    duration: float,
+    kb: keyboard.Keyboard,
+    quit_keys: Sequence[str],
+) -> None:
+    """Display the prompt for ``duration`` seconds before collecting responses."""
+
+    if duration <= 0:
+        return
+
+    block_clock = core.Clock()
+    quit_list = list(quit_keys)
+    while block_clock.getTime() < duration:
+        _draw_prompted_stimuli(stims, prompts)
+        win_left.flip()
+        win_right.flip()
+        for key in kb.getKeys(quit_list, waitRelease=False):
+            if key.name in quit_list:
+                raise ExperimentAbort(f"Quit key '{key.name}' pressed")
+        core.wait(0.01)
+
+
 def run_stereopsis_trial(
     *,
     win_left: visual.Window,
@@ -101,6 +200,7 @@ def run_stereopsis_trial(
     trial_index: int,
     fixation_duration: float,
     stimulus_duration: float,
+    prompt_display_duration: float,
     response_mapping: Dict[str, str],
     kb: keyboard.Keyboard,
     quit_keys: Sequence[str] = ("escape",),
@@ -115,6 +215,7 @@ def run_stereopsis_trial(
     Set ``log_calibration`` to ``True`` to echo these values to the PsychoPy console.
     """
 
+    _ensure_window_focus(win_right)
     trial_calibration = _build_trial_calibration(
         stimulus,
         iod_override_mm=iod_override_mm,
@@ -126,6 +227,7 @@ def run_stereopsis_trial(
     _draw_fixation(win_left, win_right, fixation_duration)
 
     stims = _prepare_stimuli(win_left, win_right, stimulus)
+    prompts = _prepare_prompt_texts(win_left, win_right)
     kb.clearEvents()
     stim_clock = core.Clock()
     response_key: Optional[str] = None
@@ -152,25 +254,30 @@ def run_stereopsis_trial(
         if response_key is not None:
             break
 
-    # Show fixation while waiting for response if none collected yet
+    # Show prompt and wait for response if none collected yet
     if response_key is None:
-        _draw_fixation(win_left, win_right, 0)
+        _show_prompt_block(
+            stims=stims,
+            prompts=prompts,
+            win_left=win_left,
+            win_right=win_right,
+            duration=prompt_display_duration,
+            kb=kb,
+            quit_keys=quit_keys,
+        )
         waiting_clock = core.Clock()
+        _ensure_window_focus(win_right)
         while response_key is None:
-            for key in kb.waitKeys(maxWait=5.0, keyList=list(key_list)) or []:
+            _draw_prompted_stimuli(stims, prompts)
+            win_left.flip()
+            win_right.flip()
+            for key in kb.waitKeys(maxWait=0.2, keyList=list(key_list)) or []:
                 if key.name in quit_keys:
                     raise ExperimentAbort(f"Quit key '{key.name}' pressed")
                 response_key = key.name
                 rt = stim_clock.getTime() + waiting_clock.getTime()
                 break
-            if response_key is None:
-                # Keep the fixation cross visible while we wait
-                fixation_left = visual.TextStim(win_left, text="+", height=0.75, color="white")
-                fixation_right = visual.TextStim(win_right, text="+", height=0.75, color="white")
-                fixation_left.draw()
-                fixation_right.draw()
-                win_left.flip()
-                win_right.flip()
+            core.wait(0.01)
 
     response_label = response_mapping.get(response_key, "") if response_key else ""
 

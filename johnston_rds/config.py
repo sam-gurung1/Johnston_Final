@@ -35,6 +35,7 @@ class ExperimentConfig:
     )
     stimulus_duration_s: float = 1.5
     fixation_duration_s: float = 0.75
+    prompt_display_duration_s: float = 0.75
     response_keys: Dict[str, str] = field(
         default_factory=lambda: {"1": "squashed", "2": "stretched"}
     )
@@ -42,7 +43,7 @@ class ExperimentConfig:
     results_directory: str = "data"
     left_screen_index: int = 1
     right_screen_index: int = 0
-    full_screen: bool = False
+    full_screen: bool = True
     window_size: Tuple[int, int] = (1280, 720)
     window_units: str = "pix"
     background_color: Sequence[float] = (0.0, 0.0, 0.0)
@@ -50,6 +51,12 @@ class ExperimentConfig:
     log_calibration_to_console: bool = False
     iod_override_mm: Optional[float] = None
     focal_override_mm: Optional[float] = None
+    use_right_viewport: bool = True
+    debug_mode: bool = False
+    debug_window_size: Tuple[int, int] = (1024, 768)
+    debug_screen_index: int = 0
+    debug_iod_mm: Optional[float] = None
+    debug_focal_mm: Optional[float] = None
 
     def instructions_text(self) -> str:
         """Return an instruction string for the on-screen dialog."""

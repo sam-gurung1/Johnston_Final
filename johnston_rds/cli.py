@@ -45,6 +45,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override the haploscope focal distance (mm) for all trials.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable single-screen debug mode with centered windows.",
+    )
+    parser.add_argument(
+        "--debug-iod-mm",
+        type=float,
+        default=None,
+        help="IOD value used when debug mode is active (fallback if --iod-mm not supplied).",
+    )
+    parser.add_argument(
+        "--debug-focal-distance-mm",
+        type=float,
+        default=None,
+        help="Focal distance used when debug mode is active (fallback if --focal-distance-mm not supplied).",
+    )
     return parser
 
 
@@ -59,6 +76,9 @@ def main(argv: list[str] | None = None) -> None:
         results_directory=str(args.data_dir),
         iod_override_mm=args.iod_mm,
         focal_override_mm=args.focal_distance_mm,
+        debug_mode=args.debug,
+        debug_iod_mm=args.debug_iod_mm,
+        debug_focal_mm=args.debug_focal_distance_mm,
     )
     experiment = JohnstonStereoExperiment(config)
     experiment.run()

@@ -4,11 +4,12 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Tuple
 
 from psychopy import core, event, gui, visual
 from psychopy.hardware import keyboard
 
+from .calibration import LEFT_VIEWPORT, MONITOR_SPEC, RIGHT_VIEWPORT, Viewport
 from .config import ExperimentConfig
 from .stimuli import load_stimulus_pairs
 from .trial import ExperimentAbort, run_stereopsis_trial
@@ -28,6 +29,14 @@ class JohnstonStereoExperiment(BaseExperiment):
 
     def __init__(self, config: ExperimentConfig | None = None):
         self.config = config or ExperimentConfig()
+        if self.config.debug_mode:
+            if self.config.iod_override_mm is None and self.config.debug_iod_mm is not None:
+                self.config.iod_override_mm = self.config.debug_iod_mm
+            if (
+                self.config.focal_override_mm is None
+                and self.config.debug_focal_mm is not None
+            ):
+                self.config.focal_override_mm = self.config.debug_focal_mm
         self._global_keys_registered = False
         self._active_windows: Dict[str, Window] | None = None
         super().__init__(
@@ -60,25 +69,87 @@ class JohnstonStereoExperiment(BaseExperiment):
     def create_windows(self) -> Dict[str, Window]:
         """Create PsychoPy windows for left and right eyes."""
 
-        common_kwargs = dict(
-            size=list(self.config.window_size),
-            units=self.config.window_units,
-            fullscr=self.config.full_screen,
-            allowGUI=False,
-            color=list(self.config.background_color),
+        window_kwargs = self._window_kwargs()
+        win_left = visual.Window(
+            **window_kwargs["left"],
+            screen=self._left_screen_index(),
         )
         win_right = visual.Window(
-            **common_kwargs,
-            screen=self.config.right_screen_index,
+            **window_kwargs["right"],
+            screen=self._right_screen_index(),
         )
-        win_left = visual.Window(
-            **common_kwargs,
-            screen=self.config.left_screen_index,
-        )
+
+        if not self.config.debug_mode and self.config.use_right_viewport:
+            win_right._setViewport(
+                (
+                    RIGHT_VIEWPORT.start_x,
+                    RIGHT_VIEWPORT.start_y,
+                    RIGHT_VIEWPORT.end_x,
+                    RIGHT_VIEWPORT.end_y,
+                )
+            )
+            win_left._setViewport(
+                (
+                    LEFT_VIEWPORT.start_x,
+                    LEFT_VIEWPORT.start_y,
+                    LEFT_VIEWPORT.end_x,
+                    LEFT_VIEWPORT.end_y,
+                )
+            )
+
         windows = {"left": win_left, "right": win_right}
         self._active_windows = windows
         self._register_global_quit_handler()
         return windows
+
+    def _window_kwargs(self) -> Dict[str, Dict[str, object]]:
+        """Return window kwargs per eye (handles debug + viewport sizing)."""
+
+        base_kwargs = dict(
+            units=self.config.window_units,
+            allowGUI=self.config.debug_mode,
+            color=list(self.config.background_color),
+            waitBlanking=not self.config.debug_mode,
+        )
+
+        fullscreen_flag = self.config.full_screen and not self.config.debug_mode
+        if self.config.debug_mode:
+            size = list(self.config.debug_window_size)
+            left_kwargs = {**base_kwargs, "size": size, "fullscr": False}
+            right_kwargs = {**base_kwargs, "size": size, "fullscr": False}
+        else:
+            left_size = self._viewport_size(LEFT_VIEWPORT)
+            right_size = (
+                self._viewport_size(RIGHT_VIEWPORT)
+                if self.config.use_right_viewport
+                else (MONITOR_SPEC.px_width, MONITOR_SPEC.px_height)
+            )
+            left_kwargs = {
+                **base_kwargs,
+                "size": list(left_size),
+                "fullscr": fullscreen_flag,
+            }
+            right_kwargs = {
+                **base_kwargs,
+                "size": list(right_size),
+                "fullscr": fullscreen_flag,
+            }
+
+        return {"left": left_kwargs, "right": right_kwargs}
+
+    def _left_screen_index(self) -> int:
+        if self.config.debug_mode:
+            return self.config.debug_screen_index
+        return self.config.left_screen_index
+
+    def _right_screen_index(self) -> int:
+        if self.config.debug_mode:
+            return self.config.debug_screen_index
+        return self.config.right_screen_index
+
+    @staticmethod
+    def _viewport_size(viewport: Viewport) -> Tuple[int, int]:
+        return viewport.end_x - viewport.start_x, viewport.end_y - viewport.start_y
 
     def _register_global_quit_handler(self) -> None:
         """Install a global key hook so ESC always shuts down safely."""
@@ -121,6 +192,7 @@ class JohnstonStereoExperiment(BaseExperiment):
                 trial_index=index,
                 fixation_duration=self.config.fixation_duration_s,
                 stimulus_duration=self.config.stimulus_duration_s,
+                prompt_display_duration=self.config.prompt_display_duration_s,
                 response_mapping=self.config.response_keys,
                 kb=kb,
                 quit_keys=self.config.quit_keys,
