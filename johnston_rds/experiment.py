@@ -59,8 +59,8 @@ class JohnstonStereoExperiment(BaseExperiment):
         """Create PsychoPy windows for left and right eyes."""
 
         common_kwargs = dict(
-            size=[1920, 1080],
-            units="deg",
+            size=[1470, 956],
+            units="pix",
             fullscr=True,
             allowGUI=False,
             color=[0, 0, 0],
