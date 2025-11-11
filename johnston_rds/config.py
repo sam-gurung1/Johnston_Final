@@ -8,7 +8,7 @@ without touching the trial or data management code.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 
 @dataclass
@@ -30,6 +30,7 @@ class ExperimentConfig:
             "left_image",
             "right_image",
             "stimulus_metadata",
+            "calibration_metadata",
         ]
     )
     stimulus_duration_s: float = 1.5
@@ -46,6 +47,9 @@ class ExperimentConfig:
     window_units: str = "pix"
     background_color: Sequence[float] = (0.0, 0.0, 0.0)
     quit_keys: Tuple[str, ...] = ("escape",)
+    log_calibration_to_console: bool = False
+    iod_override_mm: Optional[float] = None
+    focal_override_mm: Optional[float] = None
 
     def instructions_text(self) -> str:
         """Return an instruction string for the on-screen dialog."""

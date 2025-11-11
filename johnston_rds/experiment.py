@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List
 
-from psychopy import core, gui, visual
+from psychopy import core, event, gui, visual
 from psychopy.hardware import keyboard
 
 from .config import ExperimentConfig
@@ -28,6 +28,8 @@ class JohnstonStereoExperiment(BaseExperiment):
 
     def __init__(self, config: ExperimentConfig | None = None):
         self.config = config or ExperimentConfig()
+        self._global_keys_registered = False
+        self._active_windows: Dict[str, Window] | None = None
         super().__init__(
             experiment_name=self.config.experiment_name,
             data_fields=self.config.data_fields,
@@ -73,7 +75,29 @@ class JohnstonStereoExperiment(BaseExperiment):
             **common_kwargs,
             screen=self.config.left_screen_index,
         )
-        return {"left": win_left, "right": win_right}
+        windows = {"left": win_left, "right": win_right}
+        self._active_windows = windows
+        self._register_global_quit_handler()
+        return windows
+
+    def _register_global_quit_handler(self) -> None:
+        """Install a global key hook so ESC always shuts down safely."""
+
+        if self._global_keys_registered:
+            return
+
+        def _handle_global_quit() -> None:
+            print("Global quit key detected. Closing windows and exiting.")
+            for win in (self._active_windows or {}).values():
+                try:
+                    win.close()
+                except Exception:
+                    pass
+            core.quit()
+
+        for key in self.config.quit_keys:
+            event.globalKeys.add(key=key, func=_handle_global_quit)
+        self._global_keys_registered = True
 
     # ------------------------------------------------------------------
     # Trial scheduling
@@ -100,6 +124,9 @@ class JohnstonStereoExperiment(BaseExperiment):
                 response_mapping=self.config.response_keys,
                 kb=kb,
                 quit_keys=self.config.quit_keys,
+                log_calibration=self.config.log_calibration_to_console,
+                iod_override_mm=self.config.iod_override_mm,
+                focal_override_mm=self.config.focal_override_mm,
             )
             trial_data.append(trial_result)
 

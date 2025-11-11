@@ -33,6 +33,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=Path("data"),
         help="Folder where CSV/JSON/pickle outputs will be saved (default: %(default)s).",
     )
+    parser.add_argument(
+        "--iod-mm",
+        type=float,
+        default=None,
+        help="Override the interpupillary distance (mm) for all trials.",
+    )
+    parser.add_argument(
+        "--focal-distance-mm",
+        type=float,
+        default=None,
+        help="Override the haploscope focal distance (mm) for all trials.",
+    )
     return parser
 
 
@@ -45,6 +57,8 @@ def main(argv: list[str] | None = None) -> None:
     config = ExperimentConfig(
         stimulus_directory=str(args.stimuli),
         results_directory=str(args.data_dir),
+        iod_override_mm=args.iod_mm,
+        focal_override_mm=args.focal_distance_mm,
     )
     experiment = JohnstonStereoExperiment(config)
     experiment.run()

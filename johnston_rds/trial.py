@@ -1,15 +1,65 @@
 from __future__ import annotations
 
+import json
 from typing import Dict, Iterable, Optional, Sequence
 
 from psychopy import core, visual
 from psychopy.hardware import keyboard
 
+from .calibration import calc_physical_calibration
 from .stimuli import StereoStimulus
 
 
 class ExperimentAbort(Exception):
     """Raised when the participant issues a quit command (e.g., presses ESC)."""
+
+
+DEFAULT_IOD_MM: float = 64.0
+DEFAULT_FOCAL_DISTANCE_MM: float = 1070.0
+
+
+def _coerce_float(value: object, default: float) -> float:
+    """Return ``value`` as a float if numeric, otherwise ``default``."""
+
+    if isinstance(value, (int, float)):
+        return float(value)
+    return default
+
+
+def _calibration_inputs(
+    stimulus: StereoStimulus,
+    iod_override_mm: float | None,
+    focal_override_mm: float | None,
+) -> tuple[float, float]:
+    """Extract IOD and focal distance from overrides or stimulus metadata."""
+
+    metadata = stimulus.metadata or {}
+    iod = (
+        float(iod_override_mm)
+        if iod_override_mm is not None
+        else _coerce_float(metadata.get("iod_mm"), DEFAULT_IOD_MM)
+    )
+    focal = (
+        float(focal_override_mm)
+        if focal_override_mm is not None
+        else _coerce_float(metadata.get("focal_distance_mm"), DEFAULT_FOCAL_DISTANCE_MM)
+    )
+    return iod, focal
+
+
+def _build_trial_calibration(
+    stimulus: StereoStimulus,
+    *,
+    iod_override_mm: float | None,
+    focal_override_mm: float | None,
+) -> Dict[str, float]:
+    """Prepare the calibration payload for a single trial."""
+
+    iod, focal = _calibration_inputs(stimulus, iod_override_mm, focal_override_mm)
+    hardware = calc_physical_calibration(iod, focal)
+    payload: Dict[str, float] = {"iod_mm": iod, "focal_distance_mm": focal}
+    payload.update(hardware)
+    return payload
 
 
 def _draw_fixation(win_left: visual.Window, win_right: visual.Window, duration: float) -> None:
@@ -54,8 +104,24 @@ def run_stereopsis_trial(
     response_mapping: Dict[str, str],
     kb: keyboard.Keyboard,
     quit_keys: Sequence[str] = ("escape",),
+    log_calibration: bool = False,
+    iod_override_mm: float | None = None,
+    focal_override_mm: float | None = None,
 ) -> Dict[str, object]:
-    """Run a single Johnston stereopsis trial and return the recorded data."""
+    """Run a single Johnston stereopsis trial and return the recorded data.
+
+    Calibration values are recomputed per trial and stored in the returned row.
+    ``iod_override_mm``/``focal_override_mm`` take precedence over stimulus metadata.
+    Set ``log_calibration`` to ``True`` to echo these values to the PsychoPy console.
+    """
+
+    trial_calibration = _build_trial_calibration(
+        stimulus,
+        iod_override_mm=iod_override_mm,
+        focal_override_mm=focal_override_mm,
+    )
+    if log_calibration:
+        print(f"Trial {trial_index} calibration: {trial_calibration}")
 
     _draw_fixation(win_left, win_right, fixation_duration)
 
@@ -120,6 +186,7 @@ def run_stereopsis_trial(
         "left_image": str(stimulus.left_image),
         "right_image": str(stimulus.right_image),
         "stimulus_metadata": stimulus.metadata_as_json(),
+        "calibration_metadata": json.dumps(trial_calibration, sort_keys=True),
     }
 
 

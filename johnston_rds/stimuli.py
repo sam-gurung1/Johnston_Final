@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from .calibration import MIN_FOCAL_DISTANCE, MIN_IOD, calc_physical_calibration
-
 
 @dataclass
 class StereoStimulus:
@@ -70,12 +68,7 @@ def _extract_numeric(metadata: Dict[str, object], key: str) -> Optional[float]:
     return None
 
 
-def load_stimulus_pairs(
-    directory: str | os.PathLike[str],
-    *,
-    iod_mm: float = MIN_IOD,
-    focal_mm: float = MIN_FOCAL_DISTANCE,
-) -> List[StereoStimulus]:
+def load_stimulus_pairs(directory: str | os.PathLike[str]) -> List[StereoStimulus]:
     """Load left/right stereo image pairs from ``directory``.
 
     Parameters
@@ -85,10 +78,6 @@ def load_stimulus_pairs(
         for filenames ending in ``_L.png`` and automatically searches for the
         matching ``_R.png``.  If a JSON file with the same base name exists it
         will be parsed and attached as metadata.
-    iod_mm:
-        Inter-ocular distance in millimetres. Used to compute hardware calibration data.
-    focal_mm:
-        Focal distance in millimetres for the haploscope calibration.
 
     Returns
     -------
@@ -103,7 +92,6 @@ def load_stimulus_pairs(
             "and add your pre-rendered PNG pairs before running the experiment."
         )
 
-    hardware_calibration = calc_physical_calibration(iod_mm, focal_mm)
     left_images: Iterable[Path] = sorted(directory.glob("*_L.png"))
     stimuli: List[StereoStimulus] = []
 
@@ -121,8 +109,7 @@ def load_stimulus_pairs(
         disparity_px = _extract_numeric(metadata_dict, "disparity_px")
         curvature_mm = _extract_numeric(metadata_dict, "curvature_mm")
 
-        metadata_payload: Dict[str, object] = dict(metadata_dict)
-        metadata_payload["hardware_calibration"] = dict(hardware_calibration)
+        metadata_payload: Optional[Dict[str, object]] = dict(metadata_dict) if metadata_dict else None
 
         label = _infer_label(base_name, metadata_payload)
         stimuli.append(
