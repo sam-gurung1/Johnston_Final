@@ -11,7 +11,7 @@ from psychopy.hardware import keyboard
 
 from .config import ExperimentConfig
 from .stimuli import load_stimulus_pairs
-from .trial import run_stereopsis_trial
+from .trial import ExperimentAbort, run_stereopsis_trial
 from template import BaseExperiment
 
 
@@ -59,14 +59,20 @@ class JohnstonStereoExperiment(BaseExperiment):
         """Create PsychoPy windows for left and right eyes."""
 
         common_kwargs = dict(
-            size=[1470, 956],
-            units="pix",
-            fullscr=True,
+            size=list(self.config.window_size),
+            units=self.config.window_units,
+            fullscr=self.config.full_screen,
             allowGUI=False,
-            color=[0, 0, 0],
+            color=list(self.config.background_color),
         )
-        win_right = visual.Window(**common_kwargs, screen=self.config.right_screen_index)
-        win_left = visual.Window(**common_kwargs, screen=self.config.left_screen_index)
+        win_right = visual.Window(
+            **common_kwargs,
+            screen=self.config.right_screen_index,
+        )
+        win_left = visual.Window(
+            **common_kwargs,
+            screen=self.config.left_screen_index,
+        )
         return {"left": win_left, "right": win_right}
 
     # ------------------------------------------------------------------
@@ -93,6 +99,7 @@ class JohnstonStereoExperiment(BaseExperiment):
                 stimulus_duration=self.config.stimulus_duration_s,
                 response_mapping=self.config.response_keys,
                 kb=kb,
+                quit_keys=self.config.quit_keys,
             )
             trial_data.append(trial_result)
 
@@ -143,20 +150,26 @@ class JohnstonStereoExperiment(BaseExperiment):
         stimuli = load_stimulus_pairs(stimulus_dir)
 
         windows = self.create_windows()
+        aborted = False
         try:
             trial_rows = self.run_trials(windows=windows, stimuli=stimuli)
+        except ExperimentAbort:
+            aborted = True
+            trial_rows = []
         finally:
             for win in windows.values():
                 win.close()
 
-        participant = participant_info.get("Participant ID", "unknown")
-        augmented_rows = [
-            {**row, "participant": participant}
-            for row in trial_rows
-        ]
+        if not aborted:
+            participant = participant_info.get("Participant ID", "unknown")
+            augmented_rows = [
+                {**row, "participant": participant}
+                for row in trial_rows
+            ]
 
-        csv_path = self.save_results(augmented_rows, participant_info=participant_info)
-        self.save_experiment_pickle()
+            self.save_results(augmented_rows, participant_info=participant_info)
+            self.save_experiment_pickle()
+
         core.quit()
 
 

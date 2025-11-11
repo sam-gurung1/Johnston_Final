@@ -8,7 +8,7 @@ without touching the trial or data management code.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Sequence, Tuple
 
 
 @dataclass
@@ -41,6 +41,11 @@ class ExperimentConfig:
     results_directory: str = "data"
     left_screen_index: int = 1
     right_screen_index: int = 0
+    full_screen: bool = False
+    window_size: Tuple[int, int] = (1280, 720)
+    window_units: str = "pix"
+    background_color: Sequence[float] = (0.0, 0.0, 0.0)
+    quit_keys: Tuple[str, ...] = ("escape",)
 
     def instructions_text(self) -> str:
         """Return an instruction string for the on-screen dialog."""
@@ -52,6 +57,7 @@ class ExperimentConfig:
             "Participants judge whether the half-cylinder appears squashed or "
             "stretched.\n\n"
             f"Response keys:\n{options}\n\n"
-            "Stimuli are shown for 1.5 s with a fixation cross beforehand."
+            "Stimuli are shown for 1.5 s with a fixation cross beforehand.\n"
+            "Press ESC at any time to exit early."
         )
     

@@ -1,12 +1,15 @@
-"""Trial logic for the Johnston stereopsis experiment."""
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional, Sequence
 
 from psychopy import core, visual
 from psychopy.hardware import keyboard
 
 from .stimuli import StereoStimulus
+
+
+class ExperimentAbort(Exception):
+    """Raised when the participant issues a quit command (e.g., presses ESC)."""
 
 
 def _draw_fixation(win_left: visual.Window, win_right: visual.Window, duration: float) -> None:
@@ -27,8 +30,16 @@ def _prepare_stimuli(
 ) -> Dict[str, visual.ImageStim]:
     """Create PsychoPy ImageStim objects for the current trial."""
 
-    stim_left = visual.ImageStim(win_left, image=str(stimulus.left_image), units="deg")
-    stim_right = visual.ImageStim(win_right, image=str(stimulus.right_image), units="deg")
+    stim_left = visual.ImageStim(
+        win_left,
+        image=str(stimulus.left_image),
+        units=win_left.units,
+    )
+    stim_right = visual.ImageStim(
+        win_right,
+        image=str(stimulus.right_image),
+        units=win_right.units,
+    )
     return {"left": stim_left, "right": stim_right}
 
 
@@ -42,6 +53,7 @@ def run_stereopsis_trial(
     stimulus_duration: float,
     response_mapping: Dict[str, str],
     kb: keyboard.Keyboard,
+    quit_keys: Sequence[str] = ("escape",),
 ) -> Dict[str, object]:
     """Run a single Johnston stereopsis trial and return the recorded data."""
 
@@ -53,13 +65,21 @@ def run_stereopsis_trial(
     response_key: Optional[str] = None
     rt: Optional[float] = None
 
+    key_list: Iterable[str]
+    if quit_keys:
+        key_list = list(dict.fromkeys([*response_mapping.keys(), *quit_keys]))
+    else:
+        key_list = list(response_mapping.keys())
+
     while stim_clock.getTime() < stimulus_duration:
         stims["left"].draw()
         stims["right"].draw()
         win_left.flip()
         win_right.flip()
 
-        for key in kb.getKeys(list(response_mapping.keys()), waitRelease=False):
+        for key in kb.getKeys(key_list, waitRelease=False):
+            if key.name in quit_keys:
+                raise ExperimentAbort(f"Quit key '{key.name}' pressed")
             response_key = key.name
             rt = key.rt
             break
@@ -71,7 +91,9 @@ def run_stereopsis_trial(
         _draw_fixation(win_left, win_right, 0)
         waiting_clock = core.Clock()
         while response_key is None:
-            for key in kb.waitKeys(maxWait=5.0, keyList=list(response_mapping.keys())) or []:
+            for key in kb.waitKeys(maxWait=5.0, keyList=list(key_list)) or []:
+                if key.name in quit_keys:
+                    raise ExperimentAbort(f"Quit key '{key.name}' pressed")
                 response_key = key.name
                 rt = stim_clock.getTime() + waiting_clock.getTime()
                 break
@@ -99,3 +121,6 @@ def run_stereopsis_trial(
         "right_image": str(stimulus.right_image),
         "stimulus_metadata": stimulus.metadata_as_json(),
     }
+
+
+__all__ = ["run_stereopsis_trial", "ExperimentAbort"]
