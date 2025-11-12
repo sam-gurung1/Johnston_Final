@@ -118,12 +118,7 @@ class Viewport:
 
 MONITOR_SPEC = MonitorSpec()
 LEFT_VIEWPORT = Viewport(start_x=0, start_y=218, end_x=MONITOR_SPEC.px_width, end_y=MONITOR_SPEC.px_height)
-RIGHT_VIEWPORT = Viewport(
-    start_x=MONITOR_SPEC.px_width - 55,
-    start_y=210,
-    end_x=MONITOR_SPEC.px_width,
-    end_y=MONITOR_SPEC.px_height,
-)
+RIGHT_VIEWPORT = Viewport( start_x=MONITOR_SPEC.px_width - 55, start_y=210, end_x=MONITOR_SPEC.px_width,end_y=MONITOR_SPEC.px_height,)
 
 TIMER_MS: float = 33.3
 
