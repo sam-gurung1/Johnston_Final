@@ -46,6 +46,8 @@ class ExperimentConfig:
     full_screen: bool = True
     window_size: Tuple[int, int] = (1280, 720)
     window_units: str = "pix"
+    monitor_name: str = "testMonitor"
+    monitor_distance_cm: float = 70.0
     background_color: Sequence[float] = (0.0, 0.0, 0.0)
     quit_keys: Tuple[str, ...] = ("escape",)
     log_calibration_to_console: bool = False

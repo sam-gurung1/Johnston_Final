@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Tuple
 
-from psychopy import core, event, gui, visual
+from psychopy import core, event, gui, visual, monitors
 from psychopy.hardware import keyboard
 
 from .calibration import LEFT_VIEWPORT, MONITOR_SPEC, RIGHT_VIEWPORT, Viewport
@@ -39,9 +39,14 @@ class JohnstonStereoExperiment(BaseExperiment):
                 self.config.focal_override_mm = self.config.debug_focal_mm
         self._global_keys_registered = False
         self._active_windows: Dict[str, Window] | None = None
+        self._monitor_profile: monitors.Monitor | None = None
         super().__init__(
             experiment_name=self.config.experiment_name,
             data_fields=self.config.data_fields,
+            bg_color=list(self.config.background_color),
+            monitor_name=self.config.monitor_name,
+            monitor_width=MONITOR_SPEC.mm_width / 10.0,
+            monitor_distance=self.config.monitor_distance_cm,
         )
 
     # ------------------------------------------------------------------
@@ -69,7 +74,8 @@ class JohnstonStereoExperiment(BaseExperiment):
     def create_windows(self) -> Dict[str, Window]:
         """Create PsychoPy windows for left and right eyes."""
 
-        window_kwargs = self._window_kwargs()
+        monitor = self._psychopy_monitor()
+        window_kwargs = self._window_kwargs(monitor=monitor)
         win_left = visual.Window(
             **window_kwargs["left"],
             screen=self._left_screen_index(),
@@ -102,7 +108,7 @@ class JohnstonStereoExperiment(BaseExperiment):
         self._register_global_quit_handler()
         return windows
 
-    def _window_kwargs(self) -> Dict[str, Dict[str, object]]:
+    def _window_kwargs(self, *, monitor: monitors.Monitor) -> Dict[str, Dict[str, object]]:
         """Return window kwargs per eye (handles debug + viewport sizing)."""
 
         base_kwargs = dict(
@@ -110,6 +116,7 @@ class JohnstonStereoExperiment(BaseExperiment):
             allowGUI=self.config.debug_mode,
             color=list(self.config.background_color),
             waitBlanking=not self.config.debug_mode,
+            monitor=monitor,
         )
 
         fullscreen_flag = self.config.full_screen and not self.config.debug_mode
@@ -124,6 +131,11 @@ class JohnstonStereoExperiment(BaseExperiment):
                 if self.config.use_right_viewport
                 else (MONITOR_SPEC.px_width, MONITOR_SPEC.px_height)
             )
+
+            if fullscreen_flag:
+                left_size = (MONITOR_SPEC.px_width, MONITOR_SPEC.px_height)
+                right_size = (MONITOR_SPEC.px_width, MONITOR_SPEC.px_height)
+
             left_kwargs = {
                 **base_kwargs,
                 "size": list(left_size),
@@ -150,6 +162,17 @@ class JohnstonStereoExperiment(BaseExperiment):
     @staticmethod
     def _viewport_size(viewport: Viewport) -> Tuple[int, int]:
         return viewport.end_x - viewport.start_x, viewport.end_y - viewport.start_y
+
+    def _psychopy_monitor(self) -> monitors.Monitor:
+        """Return a cached PsychoPy Monitor configured for the haploscope."""
+
+        if self._monitor_profile is None:
+            monitor = monitors.Monitor(self.config.monitor_name, autoLog=False)
+            monitor.setWidth(MONITOR_SPEC.mm_width / 10.0)
+            monitor.setDistance(self.config.monitor_distance_cm)
+            monitor.setSizePix((MONITOR_SPEC.px_width, MONITOR_SPEC.px_height))
+            self._monitor_profile = monitor
+        return self._monitor_profile
 
     def _register_global_quit_handler(self) -> None:
         """Install a global key hook so ESC always shuts down safely."""
