@@ -17,10 +17,6 @@ class ExperimentAbort(Exception):
 
 DEFAULT_IOD_MM: float = 64.0
 DEFAULT_FOCAL_DISTANCE_MM: float = 1070.0
-PROMPT_TEXT = "Does the shape appear squashed or stretched?"
-PROMPT_RAISE_INCHES = 1.5
-PROMPT_RAISE_MM = PROMPT_RAISE_INCHES * 25.4
-PROMPT_OFFSET_RATIO = PROMPT_RAISE_MM / MONITOR_SPEC.mm_height
 
 
 def _coerce_float(value: object, default: float) -> float:
@@ -67,12 +63,36 @@ def _build_trial_calibration(
     return payload
 
 
+def _fixation_radius(win: visual.Window) -> float:
+    """Return a reasonable fixation marker radius in the window's units."""
+
+    if win.units == "pix":
+        return 10.0
+    return 0.2
+
+
 def _draw_fixation(win_left: visual.Window, win_right: visual.Window, duration: float) -> None:
     """Draw a fixation cross in both eyes for ``duration`` seconds."""
 
+    marker_left = visual.Circle(
+        win_left,
+        radius=_fixation_radius(win_left),
+        fillColor="white",
+        lineColor="white",
+        edges=64,
+    )
+    marker_right = visual.Circle(
+        win_right,
+        radius=_fixation_radius(win_right),
+        fillColor="white",
+        lineColor="white",
+        edges=64,
+    )
     fixation_left = visual.TextStim(win_left, text="+", height=0.75, color="white")
     fixation_right = visual.TextStim(win_right, text="+", height=0.75, color="white")
 
+    marker_left.draw()
+    marker_right.draw()
     fixation_left.draw()
     fixation_right.draw()
     win_left.flip()
@@ -98,73 +118,9 @@ def _prepare_stimuli(
     return {"left": stim_left, "right": stim_right}
 
 
-def _prompt_offset(win: visual.Window) -> float:
-    """Return the vertical offset (in window units) that equals 1.5 inches."""
-
-    if win.units == "pix":
-        return PROMPT_OFFSET_RATIO * win.size[1]
-    return PROMPT_OFFSET_RATIO
-
-
-def _prompt_position(win: visual.Window) -> float:
-    if win.units == "pix":
-        base = (-0.5 * win.size[1]) + 80
-    else:
-        base = -0.7
-    return base + _prompt_offset(win)
-
-
-def _prompt_height(win: visual.Window) -> float:
-    if win.units == "pix":
-        return 32.0
-    return 0.075
-
-
-def _prompt_wrap(win: visual.Window) -> Optional[float]:
-    if win.units == "pix":
-        return win.size[0] * 0.9
-    return None
-
-
-def _prepare_prompt_texts(win_left: visual.Window, win_right: visual.Window) -> Dict[str, visual.TextStim]:
-    """Create prompt text objects positioned below the stimuli."""
-
-    prompt_kwargs = dict(
-        text=PROMPT_TEXT,
-        color="white",
-        alignText="center",
-    )
-    left_kwargs = {
-        **prompt_kwargs,
-        "pos": (0, _prompt_position(win_left)),
-        "height": _prompt_height(win_left),
-    }
-    left_wrap = _prompt_wrap(win_left)
-    if left_wrap is not None:
-        left_kwargs["wrapWidth"] = left_wrap
-
-    right_kwargs = {
-        **prompt_kwargs,
-        "pos": (0, _prompt_position(win_right)),
-        "height": _prompt_height(win_right),
-    }
-    right_wrap = _prompt_wrap(win_right)
-    if right_wrap is not None:
-        right_kwargs["wrapWidth"] = right_wrap
-
-    prompt_left = visual.TextStim(win_left, **left_kwargs)
-    prompt_right = visual.TextStim(win_right, **right_kwargs)
-    return {"left": prompt_left, "right": prompt_right}
-
-
-def _draw_prompted_stimuli(
-    stims: Dict[str, visual.ImageStim],
-    prompts: Dict[str, visual.TextStim],
-) -> None:
+def _draw_stimuli(stims: Dict[str, visual.ImageStim]) -> None:
     stims["left"].draw()
     stims["right"].draw()
-    prompts["left"].draw()
-    prompts["right"].draw()
 
 
 def _ensure_window_focus(win: visual.Window) -> None:
@@ -182,7 +138,6 @@ def _ensure_window_focus(win: visual.Window) -> None:
 def _show_prompt_block(
     *,
     stims: Dict[str, visual.ImageStim],
-    prompts: Dict[str, visual.TextStim],
     win_left: visual.Window,
     win_right: visual.Window,
     duration: float,
@@ -199,7 +154,7 @@ def _show_prompt_block(
     quit_list = list(quit_keys)
     quit_device = quit_kb or response_kb
     while block_clock.getTime() < duration:
-        _draw_prompted_stimuli(stims, prompts)
+        _draw_stimuli(stims)
         win_left.flip()
         win_right.flip()
         if quit_device and quit_list:
@@ -246,7 +201,6 @@ def run_stereopsis_trial(
     _draw_fixation(win_left, win_right, fixation_duration)
 
     stims = _prepare_stimuli(win_left, win_right, stimulus)
-    prompts = _prepare_prompt_texts(win_left, win_right)
     if response_kb:
         response_kb.clearEvents()
     if quit_kb and quit_kb is not response_kb:
@@ -287,7 +241,6 @@ def run_stereopsis_trial(
     if response_key is None:
         _show_prompt_block(
             stims=stims,
-            prompts=prompts,
             win_left=win_left,
             win_right=win_right,
             duration=prompt_display_duration,
@@ -298,7 +251,7 @@ def run_stereopsis_trial(
         waiting_clock = core.Clock()
         _ensure_window_focus(win_right)
         while response_key is None:
-            _draw_prompted_stimuli(stims, prompts)
+            _draw_stimuli(stims)
             win_left.flip()
             win_right.flip()
             pressed = []
