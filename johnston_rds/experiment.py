@@ -11,6 +11,7 @@ from psychopy.hardware import keyboard
 
 from .calibration import LEFT_VIEWPORT, MONITOR_SPEC, RIGHT_VIEWPORT, Viewport
 from .config import ExperimentConfig
+from .serial_keypad import SerialKeypad
 from .stimuli import load_stimulus_pairs
 from .trial import ExperimentAbort, run_stereopsis_trial
 from template import BaseExperiment
@@ -54,10 +55,20 @@ class JohnstonStereoExperiment(BaseExperiment):
             "Participant ID": "",
             "Session": "1",
         }
-        dialog = gui.DlgFromDict(info, title="Johnston Stereopsis", fixed=["Session"])
+        dialog_pos = self._experimenter_dialog_position()
+        dialog = gui.DlgFromDict(
+            info,
+            title="Johnston Stereopsis",
+            fixed=["Session"],
+            screen=-1,
+            show=False,
+        )
+        self._apply_dialog_position(dialog, dialog_pos)
+        dialog.show()
         if not dialog.OK:
             core.quit()
-        instruction_dialog = gui.Dlg(title="Instructions")
+        instruction_dialog = gui.Dlg(title="Instructions", screen=-1)
+        self._apply_dialog_position(instruction_dialog, dialog_pos)
         instruction_dialog.addText(self.config.instructions_text())
         instruction_dialog.show()
         info["Instructions"] = self.config.instructions_text()
@@ -80,22 +91,8 @@ class JohnstonStereoExperiment(BaseExperiment):
         )
 
         if not self.config.debug_mode and self.config.use_right_viewport:
-            win_right(
-                (
-                    RIGHT_VIEWPORT.start_x,
-                    RIGHT_VIEWPORT.start_y,
-                    RIGHT_VIEWPORT.end_x,
-                    RIGHT_VIEWPORT.end_y,
-                )
-            )
-            win_left(
-                (
-                    LEFT_VIEWPORT.start_x,
-                    LEFT_VIEWPORT.start_y,
-                    LEFT_VIEWPORT.end_x,
-                    LEFT_VIEWPORT.end_y,
-                )
-            )
+            self._apply_window_viewport(win_right, RIGHT_VIEWPORT)
+            self._apply_window_viewport(win_left, LEFT_VIEWPORT)
 
         windows = {"left": win_left, "right": win_right}
         self._active_windows = windows
@@ -124,6 +121,9 @@ class JohnstonStereoExperiment(BaseExperiment):
                 if self.config.use_right_viewport
                 else (MONITOR_SPEC.px_width, MONITOR_SPEC.px_height)
             )
+            if fullscreen_flag:
+                left_size = (MONITOR_SPEC.px_width, MONITOR_SPEC.px_height)
+                right_size = (MONITOR_SPEC.px_width, MONITOR_SPEC.px_height)
             left_kwargs = {
                 **base_kwargs,
                 "size": list(left_size),
@@ -150,6 +150,81 @@ class JohnstonStereoExperiment(BaseExperiment):
     @staticmethod
     def _viewport_size(viewport: Viewport) -> Tuple[int, int]:
         return viewport.end_x - viewport.start_x, viewport.end_y - viewport.start_y
+
+    def _apply_window_viewport(self, window: Window, viewport: Viewport) -> None:
+        """Configure PsychoPy viewport/scissor rectangles for the given window."""
+
+        width, height = self._viewport_size(viewport)
+        if width <= 0 or height <= 0:
+            raise ValueError("Viewport width/height must be positive")
+        bounds = [
+            viewport.start_x,
+            viewport.start_y,
+            width,
+            height,
+        ]
+        window.viewport = bounds
+        window.scissor = bounds
+        window.scissorTest = True
+
+    def _experimenter_dialog_position(self) -> Tuple[int, int] | None:
+        """Return a dialog position anchored to the experimenter's monitor."""
+
+        screen_index = self.config.experimenter_screen_index
+        if screen_index < 0:
+            return None
+        try:
+            from psychopy.gui import qtgui
+
+            qtgui.ensureQtApp()
+            app = qtgui.qtapp
+            screens = app.screens() if app is not None else []
+            target = screens[screen_index]
+            geometry = target.availableGeometry()
+        except Exception:
+            return None
+        # offset a little from the top-left to avoid hiding behind taskbars
+        return geometry.x() + 120, geometry.y() + 120
+
+    @staticmethod
+    def _apply_dialog_position(dialog: gui.Dlg, position: Tuple[int, int] | None) -> None:
+        """Assign a manual window position before showing the dialog."""
+
+        if position is not None:
+            dialog.pos = position
+
+    @staticmethod
+    def _create_keyboard(
+        device_name: str | None,
+        *,
+        allow_disable: bool = False,
+    ) -> keyboard.Keyboard | None:
+        """Return a PsychoPy keyboard device (or None if disabled)."""
+
+        if isinstance(device_name, str):
+            normalized = device_name.strip().lower()
+            if allow_disable and normalized in {"", "none", "disabled"}:
+                return None
+            if normalized in {"", "default", "auto"}:
+                return keyboard.Keyboard()
+            return keyboard.Keyboard(deviceName=device_name)
+        # No name supplied: use default keyboard
+        return keyboard.Keyboard()
+
+    def _create_serial_keypad(self) -> SerialKeypad | None:
+        """Instantiate the serial keypad if configured."""
+
+        port = self.config.participant_serial_port
+        if not port:
+            return None
+        try:
+            return SerialKeypad(
+                port=port,
+                baudrate=self.config.participant_serial_baud,
+            )
+        except Exception as exc:
+            print(f"Warning: could not open serial keypad on {port}: {exc}")
+            return None
 
     def _register_global_quit_handler(self) -> None:
         """Install a global key hook so ESC always shuts down safely."""
@@ -178,10 +253,22 @@ class JohnstonStereoExperiment(BaseExperiment):
         *,
         windows: Dict[str, Window],
         stimuli: Iterable[StereoStimulus],
+        serial_keypad: SerialKeypad | None,
     ) -> List[Dict[str, object]]:
         """Run each stereopsis trial and return the recorded rows."""
 
-        kb = keyboard.Keyboard()
+        response_kb = self._create_keyboard(
+            self.config.participant_keyboard_name,
+            allow_disable=True,
+        )
+        if response_kb is None and serial_keypad is None:
+            raise RuntimeError(
+                "No participant input device configured. Set --participant-keyboard or --participant-serial-port."
+            )
+        quit_kb = self._create_keyboard(
+            self.config.experimenter_keyboard_name,
+            allow_disable=False,
+        )
         trial_data: List[Dict[str, object]] = []
 
         for index, stimulus in enumerate(stimuli, start=1):
@@ -194,7 +281,9 @@ class JohnstonStereoExperiment(BaseExperiment):
                 stimulus_duration=self.config.stimulus_duration_s,
                 prompt_display_duration=self.config.prompt_display_duration_s,
                 response_mapping=self.config.response_keys,
-                kb=kb,
+                response_kb=response_kb,
+                quit_kb=quit_kb,
+                serial_keypad=serial_keypad,
                 quit_keys=self.config.quit_keys,
                 log_calibration=self.config.log_calibration_to_console,
                 iod_override_mm=self.config.iod_override_mm,
@@ -248,16 +337,23 @@ class JohnstonStereoExperiment(BaseExperiment):
         stimulus_dir = os.fspath(Path(self.config.stimulus_directory))
         stimuli = load_stimulus_pairs(stimulus_dir)
 
+        serial_keypad = self._create_serial_keypad()
         windows = self.create_windows()
         aborted = False
         try:
-            trial_rows = self.run_trials(windows=windows, stimuli=stimuli)
+            trial_rows = self.run_trials(
+                windows=windows,
+                stimuli=stimuli,
+                serial_keypad=serial_keypad,
+            )
         except ExperimentAbort:
             aborted = True
             trial_rows = []
         finally:
             for win in windows.values():
                 win.close()
+            if serial_keypad:
+                serial_keypad.close()
 
         if not aborted:
             participant = participant_info.get("Participant ID", "unknown")

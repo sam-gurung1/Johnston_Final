@@ -39,6 +39,10 @@ class ExperimentConfig:
     response_keys: Dict[str, str] = field(
         default_factory=lambda: {"1": "squashed", "2": "stretched"}
     )
+    participant_keyboard_name: Optional[str] = None
+    experimenter_keyboard_name: Optional[str] = None
+    participant_serial_port: Optional[str] = None
+    participant_serial_baud: int = 9600
     stimulus_directory: str = "stimuli"
     results_directory: str = "data"
     left_screen_index: int = 1
@@ -48,13 +52,14 @@ class ExperimentConfig:
     window_units: str = "pix"
     monitor_name: str = "testMonitor"
     monitor_distance_cm: float = 70.0
-    background_color: Sequence[float] = (0.0, 0.0, 0.0)
+    background_color: Sequence[float] = (-1.0, -1.0, -1.0)
     quit_keys: Tuple[str, ...] = ("escape",)
     log_calibration_to_console: bool = False
     iod_override_mm: Optional[float] = None
     focal_override_mm: Optional[float] = None
     use_right_viewport: bool = True
     debug_mode: bool = False
+    experimenter_screen_index: int = 2
     debug_window_size: Tuple[int, int] = (1024, 768)
     debug_screen_index: int = 0
     debug_iod_mm: Optional[float] = None

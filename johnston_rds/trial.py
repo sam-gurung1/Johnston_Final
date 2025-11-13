@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, Iterable, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from psychopy import core, visual
 from psychopy.hardware import keyboard
 
-from .calibration import calc_physical_calibration
+from .calibration import MONITOR_SPEC, calc_physical_calibration
+from .serial_keypad import SerialKeypad
 from .stimuli import StereoStimulus
 
 
@@ -17,6 +18,9 @@ class ExperimentAbort(Exception):
 DEFAULT_IOD_MM: float = 64.0
 DEFAULT_FOCAL_DISTANCE_MM: float = 1070.0
 PROMPT_TEXT = "Does the shape appear squashed or stretched?"
+PROMPT_RAISE_INCHES = 1.5
+PROMPT_RAISE_MM = PROMPT_RAISE_INCHES * 25.4
+PROMPT_OFFSET_RATIO = PROMPT_RAISE_MM / MONITOR_SPEC.mm_height
 
 
 def _coerce_float(value: object, default: float) -> float:
@@ -94,10 +98,20 @@ def _prepare_stimuli(
     return {"left": stim_left, "right": stim_right}
 
 
+def _prompt_offset(win: visual.Window) -> float:
+    """Return the vertical offset (in window units) that equals 1.5 inches."""
+
+    if win.units == "pix":
+        return PROMPT_OFFSET_RATIO * win.size[1]
+    return PROMPT_OFFSET_RATIO
+
+
 def _prompt_position(win: visual.Window) -> float:
     if win.units == "pix":
-        return (-0.5 * win.size[1]) + 80
-    return -0.7
+        base = (-0.5 * win.size[1]) + 80
+    else:
+        base = -0.7
+    return base + _prompt_offset(win)
 
 
 def _prompt_height(win: visual.Window) -> float:
@@ -172,7 +186,8 @@ def _show_prompt_block(
     win_left: visual.Window,
     win_right: visual.Window,
     duration: float,
-    kb: keyboard.Keyboard,
+    response_kb: keyboard.Keyboard | None,
+    quit_kb: keyboard.Keyboard | None,
     quit_keys: Sequence[str],
 ) -> None:
     """Display the prompt for ``duration`` seconds before collecting responses."""
@@ -182,13 +197,15 @@ def _show_prompt_block(
 
     block_clock = core.Clock()
     quit_list = list(quit_keys)
+    quit_device = quit_kb or response_kb
     while block_clock.getTime() < duration:
         _draw_prompted_stimuli(stims, prompts)
         win_left.flip()
         win_right.flip()
-        for key in kb.getKeys(quit_list, waitRelease=False):
-            if key.name in quit_list:
-                raise ExperimentAbort(f"Quit key '{key.name}' pressed")
+        if quit_device and quit_list:
+            for key in quit_device.getKeys(quit_list, waitRelease=False):
+                if key.name in quit_list:
+                    raise ExperimentAbort(f"Quit key '{key.name}' pressed")
         core.wait(0.01)
 
 
@@ -202,7 +219,9 @@ def run_stereopsis_trial(
     stimulus_duration: float,
     prompt_display_duration: float,
     response_mapping: Dict[str, str],
-    kb: keyboard.Keyboard,
+    response_kb: keyboard.Keyboard,
+    quit_kb: keyboard.Keyboard | None,
+    serial_keypad: SerialKeypad | None,
     quit_keys: Sequence[str] = ("escape",),
     log_calibration: bool = False,
     iod_override_mm: float | None = None,
@@ -228,16 +247,17 @@ def run_stereopsis_trial(
 
     stims = _prepare_stimuli(win_left, win_right, stimulus)
     prompts = _prepare_prompt_texts(win_left, win_right)
-    kb.clearEvents()
+    if response_kb:
+        response_kb.clearEvents()
+    if quit_kb and quit_kb is not response_kb:
+        quit_kb.clearEvents()
     stim_clock = core.Clock()
     response_key: Optional[str] = None
     rt: Optional[float] = None
 
-    key_list: Iterable[str]
-    if quit_keys:
-        key_list = list(dict.fromkeys([*response_mapping.keys(), *quit_keys]))
-    else:
-        key_list = list(response_mapping.keys())
+    response_keys: List[str] = list(response_mapping.keys())
+    quit_list: List[str] = list(quit_keys)
+    quit_device = quit_kb or response_kb
 
     while stim_clock.getTime() < stimulus_duration:
         stims["left"].draw()
@@ -245,14 +265,23 @@ def run_stereopsis_trial(
         win_left.flip()
         win_right.flip()
 
-        for key in kb.getKeys(key_list, waitRelease=False):
-            if key.name in quit_keys:
-                raise ExperimentAbort(f"Quit key '{key.name}' pressed")
-            response_key = key.name
-            rt = key.rt
-            break
+        if response_kb:
+            for key in response_kb.getKeys(response_keys, waitRelease=False):
+                response_key = key.name
+                rt = key.rt
+                break
         if response_key is not None:
             break
+        if serial_keypad:
+            serial_key = serial_keypad.poll(response_keys)
+            if serial_key is not None:
+                response_key = serial_key
+                rt = stim_clock.getTime()
+                break
+        if quit_device and quit_list:
+            for key in quit_device.getKeys(quit_list, waitRelease=False):
+                if key.name in quit_list:
+                    raise ExperimentAbort(f"Quit key '{key.name}' pressed")
 
     # Show prompt and wait for response if none collected yet
     if response_key is None:
@@ -262,7 +291,8 @@ def run_stereopsis_trial(
             win_left=win_left,
             win_right=win_right,
             duration=prompt_display_duration,
-            kb=kb,
+            response_kb=response_kb,
+            quit_kb=quit_kb,
             quit_keys=quit_keys,
         )
         waiting_clock = core.Clock()
@@ -271,12 +301,23 @@ def run_stereopsis_trial(
             _draw_prompted_stimuli(stims, prompts)
             win_left.flip()
             win_right.flip()
-            for key in kb.waitKeys(maxWait=0.2, keyList=list(key_list)) or []:
-                if key.name in quit_keys:
-                    raise ExperimentAbort(f"Quit key '{key.name}' pressed")
-                response_key = key.name
+            pressed = []
+            if response_kb:
+                pressed = response_kb.getKeys(response_keys, waitRelease=False)
+            if pressed:
+                response_key = pressed[0].name
                 rt = stim_clock.getTime() + waiting_clock.getTime()
                 break
+            if serial_keypad:
+                serial_key = serial_keypad.poll(response_keys)
+                if serial_key is not None:
+                    response_key = serial_key
+                    rt = stim_clock.getTime() + waiting_clock.getTime()
+                    break
+            if quit_device and quit_list:
+                for key in quit_device.getKeys(quit_list, waitRelease=False):
+                    if key.name in quit_list:
+                        raise ExperimentAbort(f"Quit key '{key.name}' pressed")
             core.wait(0.01)
 
     response_label = response_mapping.get(response_key, "") if response_key else ""
