@@ -1,6 +1,6 @@
 # Johnston Stereopsis Experiment
 
-This repository bundles a PsychoPy implementation of the Johnston (1991) stereopsis task plus a few helper scripts for inspecting stimuli and calibration values. The goal of this README is to give new lab members – even if they are still getting comfortable with Python/PsychoPy – enough context to set up the environment, understand the code layout, and run the experiment safely.
+This repository is a PsychoPy implementation of the Johnston (1991) stereopsis task plus a few helper scripts for inspecting stimuli and calibration values. The goal of this README is to give enough context to set up the environment, understand the code layout, and run the experiment! 
 
 ---
 
@@ -44,7 +44,8 @@ Key modules inside `johnston_rds/`:
    Open PsychoPy → Tools → Monitor Center, click **New**, enter `testMonitor` (or whatever name you plan to use), and fill in physical width/height (in cm) plus screen resolution. Save it. This prevents warnings like “Monitor specification not found. Creating a temporary one…”. If you choose a different monitor name, update `monitor_name` in `johnston_rds/config.py` or pass it in when creating `ExperimentConfig` yourself.
 
 4. **Plan your screen layout**
-   - `left_screen_index` / `right_screen_index` default to 1/0 (matching the Johnston haploscope arrangement). Adjust if your OS numbers monitors differently.
+   - `left_screen_index` / `right_screen_index` default to 1/0 (matching the Johnston haploscope arrangement).
+  
    - `experimenter_screen_index` controls where the info dialogs appear. Use the CLI flag `--experimenter-screen-index` if the participant display is the OS “primary” monitor and you want dialogs on the third monitor, for example.
 
 5. **Run the experiment**
@@ -71,12 +72,12 @@ By default the task runs the first **60** stimuli it finds. After the first **30
 3. `ExperimentConfig` feeds into `JohnstonStereoExperiment` (`experiment.py`):
    - Collects participant info via PsychoPy dialogs (`collect_participant_info`).
    - Loads stimuli (`stimuli.load_stimulus_pairs`).
-   - Creates two PsychoPy windows (`create_windows`), applying viewports if you’re using the haploscope hardware.
+   - Creates two PsychoPy windows (`create_windows`), applying viewports for the haploscope hardware.
    - Runs `run_trials`, which simply loops over stimuli and calls `trial.run_stereopsis_trial` for each one.
 4. `trial.py` handles:
    - Fixation cross display.
    - Stimulus presentation to left/right windows.
-   - Prompt text (“Does the shape appear squashed or stretched?”) plus response capture via PsychoPy’s keyboard device.
+   - Response capture via PsychoPy’s keyboard device when participant presses 1 or 2.
    - ESC detection (with a clean shutdown) and frame timing.
    - Returning a results dictionary (response key, RT, metadata, calibration measurements, etc.).
 5. After all trials, `experiment.py` writes CSV/JSON outputs, pickles experiment state via `template.BaseExperiment`, and closes PsychoPy.
@@ -102,4 +103,4 @@ By default the task runs the first **60** stimuli it finds. After the first **30
 
 ## Need help?
 
-If PsychoPy throws errors about missing libraries or monitor specs, run the app once outside this repo to make sure it initializes properly (PsychoPy will create preference folders, etc.). For deeper issues (OpenGL, screen ordering, custom hardware), document your OS + GPU + PsychoPy version and share logs with the lab’s technical lead. This README stays intentionally high‑level so you can extend it as the project evolves. Happy experimenting! 🎯
+If PsychoPy throws errors about missing libraries or monitor specs, run the app once outside this repo to make sure it initializes properly (PsychoPy will create preference folders, etc.). For deeper issues (OpenGL, screen ordering, custom hardware), document your OS + GPU + PsychoPy version and share logs with the lab’s technical lead. Happy experimenting!!!
