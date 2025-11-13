@@ -39,6 +39,14 @@ class ExperimentConfig:
     response_keys: Dict[str, str] = field(
         default_factory=lambda: {"1": "squashed", "2": "stretched"}
     )
+    max_trials: int = 60
+    break_after_trials: int = 30
+    break_duration_s: float = 120.0
+    break_resume_key: str = "3"
+    break_message: str = (
+        "Break time!\nPlease rest your eyes.\n"
+        "The experiment will resume automatically, or press {key} to continue early."
+    )
     participant_keyboard_name: Optional[str] = None
     experimenter_keyboard_name: Optional[str] = None
     participant_serial_port: Optional[str] = None

@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+DEFAULT_STIMULUS_IOD_MM = 64.0
+DEFAULT_STIMULUS_FOCAL_MM = 600.0
+
 
 @dataclass
 class StereoStimulus:
@@ -24,6 +27,8 @@ class StereoStimulus:
     metadata: Dict[str, object] | None = None
     disparity_px: Optional[float] = None
     curvature_mm: Optional[float] = None
+    iod_mm: Optional[float] = None
+    focal_distance_mm: Optional[float] = None
 
     def metadata_as_json(self) -> str:
         """Return the metadata dictionary as a compact JSON string."""
@@ -112,6 +117,16 @@ def load_stimulus_pairs(directory: str | os.PathLike[str]) -> List[StereoStimulu
         metadata_payload: Optional[Dict[str, object]] = dict(metadata_dict) if metadata_dict else None
 
         label = _infer_label(base_name, metadata_payload)
+        iod_mm = _extract_numeric(metadata_dict, "iod_mm")
+        focal_mm = _extract_numeric(metadata_dict, "focal_distance_mm")
+        iod_mm = iod_mm if iod_mm is not None else DEFAULT_STIMULUS_IOD_MM
+        focal_mm = focal_mm if focal_mm is not None else DEFAULT_STIMULUS_FOCAL_MM
+
+        if metadata_payload is None:
+            metadata_payload = {}
+        metadata_payload.setdefault("iod_mm", iod_mm)
+        metadata_payload.setdefault("focal_distance_mm", focal_mm)
+
         stimuli.append(
             StereoStimulus(
                 stimulus_id=base_name,
@@ -121,6 +136,8 @@ def load_stimulus_pairs(directory: str | os.PathLike[str]) -> List[StereoStimulu
                 metadata=metadata_payload,
                 disparity_px=disparity_px,
                 curvature_mm=curvature_mm,
+                iod_mm=iod_mm,
+                focal_distance_mm=focal_mm,
             )
         )
 

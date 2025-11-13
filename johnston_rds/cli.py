@@ -5,8 +5,10 @@ import argparse
 import sys
 from pathlib import Path
 
+from .calibration import calc_physical_calibration
 from .config import ExperimentConfig
 from .experiment import JohnstonStereoExperiment
+from .stimuli import DEFAULT_STIMULUS_FOCAL_MM, DEFAULT_STIMULUS_IOD_MM, load_stimulus_pairs
 
 DEFAULT_EXPERIMENTER_SCREEN = ExperimentConfig.__dataclass_fields__[
     "experimenter_screen_index"
@@ -119,6 +121,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=DEFAULT_SERIAL_BAUD,
         help="Baud rate for the participant serial keypad (default: %(default)s).",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Load stimuli, compute calibration values for each, print them, and exit "
+            "without launching the PsychoPy experiment."
+        ),
+    )
     return parser
 
 
@@ -142,8 +152,43 @@ def main(argv: list[str] | None = None) -> None:
         participant_serial_port=args.participant_serial_port,
         participant_serial_baud=args.participant_serial_baud,
     )
+    if args.dry_run:
+        perform_dry_run(config)
+        return
+
     experiment = JohnstonStereoExperiment(config)
     experiment.run()
+
+
+def perform_dry_run(config: ExperimentConfig) -> None:
+    """Print calibration summaries for every stimulus and exit."""
+
+    stimuli = load_stimulus_pairs(config.stimulus_directory)
+    if not stimuli:
+        print("No stimuli found; nothing to report.")
+        return
+
+    def _resolve(value: float | None, override: float | None, default: float) -> float:
+        if override is not None:
+            return float(override)
+        if value is not None:
+            return float(value)
+        return default
+
+    print(f"Dry-run: {len(stimuli)} stimuli loaded from '{config.stimulus_directory}'.")
+    for index, stimulus in enumerate(stimuli, start=1):
+        iod = _resolve(stimulus.iod_mm, config.iod_override_mm, DEFAULT_STIMULUS_IOD_MM)
+        focal = _resolve(
+            stimulus.focal_distance_mm,
+            config.focal_override_mm,
+            DEFAULT_STIMULUS_FOCAL_MM,
+        )
+        calibration = calc_physical_calibration(iod, focal)
+        print(f"[{index:03}] {stimulus.stimulus_id}")
+        print(f"      iod_mm={iod:.2f} | focal_mm={focal:.2f}")
+        for key, value in sorted(calibration.items()):
+            print(f"      {key:<14}: {value:.4f}")
+    print("Dry-run complete.")
 
 
 if __name__ == "__main__":  # pragma: no cover - module level CLI hook

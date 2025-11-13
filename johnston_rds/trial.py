@@ -16,7 +16,7 @@ class ExperimentAbort(Exception):
 
 
 DEFAULT_IOD_MM: float = 64.0
-DEFAULT_FOCAL_DISTANCE_MM: float = 1070.0
+DEFAULT_FOCAL_DISTANCE_MM: float = 600.0
 
 
 def _coerce_float(value: object, default: float) -> float:
@@ -35,15 +35,25 @@ def _calibration_inputs(
     """Extract IOD and focal distance from overrides or stimulus metadata."""
 
     metadata = stimulus.metadata or {}
+    iod_candidate = (
+        stimulus.iod_mm
+        if getattr(stimulus, "iod_mm", None) is not None
+        else (metadata.get("iod_mm") if metadata else None)
+    )
+    focal_candidate = (
+        stimulus.focal_distance_mm
+        if getattr(stimulus, "focal_distance_mm", None) is not None
+        else (metadata.get("focal_distance_mm") if metadata else None)
+    )
     iod = (
         float(iod_override_mm)
         if iod_override_mm is not None
-        else _coerce_float(metadata.get("iod_mm"), DEFAULT_IOD_MM)
+        else _coerce_float(iod_candidate, DEFAULT_IOD_MM)
     )
     focal = (
         float(focal_override_mm)
         if focal_override_mm is not None
-        else _coerce_float(metadata.get("focal_distance_mm"), DEFAULT_FOCAL_DISTANCE_MM)
+        else _coerce_float(focal_candidate, DEFAULT_FOCAL_DISTANCE_MM)
     )
     return iod, focal
 
@@ -174,7 +184,7 @@ def run_stereopsis_trial(
     stimulus_duration: float,
     prompt_display_duration: float,
     response_mapping: Dict[str, str],
-    response_kb: keyboard.Keyboard,
+    response_kb: keyboard.Keyboard | None,
     quit_kb: keyboard.Keyboard | None,
     serial_keypad: SerialKeypad | None,
     quit_keys: Sequence[str] = ("escape",),
@@ -195,8 +205,7 @@ def run_stereopsis_trial(
         iod_override_mm=iod_override_mm,
         focal_override_mm=focal_override_mm,
     )
-    if log_calibration:
-        print(f"Trial {trial_index} calibration: {trial_calibration}")
+    print(f"Trial {trial_index} ({stimulus.stimulus_id}) calibration: {trial_calibration}")
 
     _draw_fixation(win_left, win_right, fixation_duration)
 

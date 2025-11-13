@@ -293,6 +293,48 @@ class JohnstonStereoExperiment(BaseExperiment):
 
         return trial_data
 
+    def _run_break(self, windows: Dict[str, Window]) -> None:
+        """Display a break screen with a timer and optional resume key."""
+
+        duration = max(1.0, float(self.config.break_duration_s))
+        resume_key = (self.config.break_resume_key or "").strip()
+        message = self.config.break_message.format(key=resume_key or "any key")
+
+        kb = keyboard.Keyboard()
+        timer = core.Clock()
+        wrap_left = windows["left"].size[0] * 0.8 if windows["left"].units == "pix" else None
+        wrap_right = windows["right"].size[0] * 0.8 if windows["right"].units == "pix" else None
+        text_left = visual.TextStim(
+            windows["left"],
+            text="",
+            color="white",
+            height=0.75 if windows["left"].units != "pix" else 32,
+            wrapWidth=wrap_left,
+        )
+        text_right = visual.TextStim(
+            windows["right"],
+            text="",
+            color="white",
+            height=0.75 if windows["right"].units != "pix" else 32,
+            wrapWidth=wrap_right,
+        )
+        while True:
+            remaining = max(0.0, duration - timer.getTime())
+            line = f"{message}\n\nTime remaining: {int(round(remaining))} s"
+            text_left.text = line
+            text_right.text = line
+            text_left.draw()
+            text_right.draw()
+            windows["left"].flip()
+            windows["right"].flip()
+            if resume_key:
+                for key in kb.getKeys([resume_key], waitRelease=False):
+                    if key.name == resume_key:
+                        return
+            if remaining <= 0:
+                break
+            core.wait(0.1)
+
     # ------------------------------------------------------------------
     # Data persistence
     # ------------------------------------------------------------------
@@ -336,16 +378,38 @@ class JohnstonStereoExperiment(BaseExperiment):
 
         stimulus_dir = os.fspath(Path(self.config.stimulus_directory))
         stimuli = load_stimulus_pairs(stimulus_dir)
+        max_trials = max(1, self.config.max_trials)
+        stimuli = stimuli[:max_trials]
 
         serial_keypad = self._create_serial_keypad()
         windows = self.create_windows()
         aborted = False
+        trial_rows: List[Dict[str, object]] = []
         try:
-            trial_rows = self.run_trials(
-                windows=windows,
-                stimuli=stimuli,
-                serial_keypad=serial_keypad,
+            break_after = self.config.break_after_trials
+            if 0 < break_after < len(stimuli):
+                first_block = stimuli[:break_after]
+                second_block = stimuli[break_after:]
+            else:
+                first_block = stimuli
+                second_block = []
+
+            trial_rows.extend(
+                self.run_trials(
+                    windows=windows,
+                    stimuli=first_block,
+                    serial_keypad=serial_keypad,
+                )
             )
+            if second_block:
+                self._run_break(windows)
+                trial_rows.extend(
+                    self.run_trials(
+                        windows=windows,
+                        stimuli=second_block,
+                        serial_keypad=serial_keypad,
+                    )
+                )
         except ExperimentAbort:
             aborted = True
             trial_rows = []

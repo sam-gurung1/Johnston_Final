@@ -52,10 +52,15 @@ Key modules inside `johnston_rds/`:
    python run_johnston_stereopsis.py --stimuli stimuli --data-dir data
    ```
    Useful flags:
-   - `--debug` – single‑screen mode (both eyes centered, no viewports, windowed). Great for quick checks without dual monitors.
-   - `--iod-mm` / `--focal-distance-mm` – override the mechanical settings that feed the calibration math.
-   - `--experimenter-screen-index` – choose which monitor displays the participant info and instruction dialogs.
-   - `--participant-keyboard` / `--experimenter-keyboard` – optional device names (as reported by `psychopy.hardware.keyboard.getDevices()`) if you want a dedicated keypad for responses and a different keyboard for ESC.
+- `--debug` – single-screen mode (both eyes centered, no viewports, windowed). Great for quick checks without dual monitors.
+- `--iod-mm` / `--focal-distance-mm` – override the mechanical settings that feed the calibration math.
+- `--experimenter-screen-index` – choose which monitor displays the participant info and instruction dialogs.
+- `--participant-keyboard` / `--experimenter-keyboard` – optional device names (as reported by `psychopy.hardware.keyboard.getDevices()`) if you want a dedicated keypad for responses and a different keyboard for ESC.
+- `--dry-run` – skip PsychoPy entirely; just load stimuli, compute calibration values for each (honouring metadata/defaults), print them, and exit. Handy for verifying JSON sidecars before lab time.
+
+### Trial counts & breaks
+
+By default the task runs the first **60** stimuli it finds. After the first **30** trials the code automatically inserts a two-minute break so participants can rest. A countdown timer is shown on both screens during the break; pressing the `3` key resumes early. Adjust these values in `ExperimentConfig` (`max_trials`, `break_after_trials`, `break_duration_s`, `break_resume_key`, and `break_message`) if you need a different schedule.
 
 ---
 
